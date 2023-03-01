@@ -1,0 +1,72 @@
+#!/usr/bin/env python3
+import sys
+
+PAGE_SIZE = 256
+OFFSET_MASK = 0x00FF
+PAGE_NUM_MASK = 0xFF00
+
+TLB_SIZE = 16
+BACKING_STORE_SIZE = 65536
+BACKING_STORE_PAGE_SIZE = 256
+
+def memSim(rsf_name, frames, pra):
+    #inputs:
+    #   rsf_name = name of a file containing the list of logical memory addresses
+    #   frames = integeger 0 < and <= 256 representing the number of frames in the system
+    #   pra = algorithms first-in first-out (FIFO), least recently used (LRU), optimal (OPT)
+    memory_size = PAGE_SIZE * frames
+    #read the rsf to get  a list of address objects formatted [logical_addr, page_num, offset]
+    addrs = read_rsf(rsf_name)
+    
+
+    return
+
+#function to read in addresses from the reference sequence file
+def read_rsf(rsf_name):
+    #list to store in values from rsf
+    addrs = []
+
+    o_file = open(file_name, "rt")
+    for line in o_file:
+        #read addresses in from open file 
+        #get logical address
+        addr = int(line)
+        #get offset by bit masking LSB 0-7
+        # 0000 0000 1111 1111 -> mask = 0x00FF
+        offset = addr & OFFSET_MASK
+        #get page num LSB 8-15
+        # 1111 1111 0000 0000 -> mask = 0xFF00
+        page_num = addr & PAGE_NUM_MASK
+        
+        #append address object to list of addresses
+        addrs.append([addr, offset, page_num])
+    return addrs
+
+if __name__ == '__main__':
+    #usage of executable ./memSim <reference-sequence-file.txt> <FRAMES> <PRA>
+    file_name = sys.argv[1]
+    frames = 256
+    pra = "FIFO"
+    frame_flag = pra_flag = 0
+
+    if(len(sys.argv) > 2):
+        #more than jus file_name provided
+        if(len(sys.argv) == 3):
+            frame_flag = 1
+            pra_flag = 0
+        if(len(sys.argv) == 4):
+            frame_flag = 1
+            pra_flag = 1
+
+    if(frame_flag == 1):
+        #frame provided
+        if(0 < int(sys.argv[2]) and int(sys.argv[2]) <= 256):
+            #number of frames valid, set frames
+            frames = int(sys.argv[2])
+    if(pra_flag == 1):
+        #algorithm provided
+        if(sys.argv[3] == "FIFO" or sys.argv[3] == "LRU" or sys.argv[3] == "OPT"):
+            #algorithm valid, set pra
+            pra = sys.argv[3]
+    #call function with correct arguments
+    memSim(file_name, frames, pra)
