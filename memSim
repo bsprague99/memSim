@@ -73,9 +73,12 @@ def memSim(rsf_name, frames, pra):
             elif state == TLB:
                 #check if the page is in the tlb, if it is, yay, if not, check page table for page
                 #print("in tlb %d" % curr_addr)
-                found_flag = check_tlb()
+                found_flag, curr_frame_num = check_tlb(curr_page_num)
                 if(found_flag):
                     tlb_hit_count += 1
+                    #page is located in tlb yay, pull page data from physical memory using the frame number
+                    page_data = physical_memory[curr_frame_num * PAGE_SIZE:(curr_frame_num * PAGE_SIZE + PAGE_SIZE)]
+                    ref_byte = physical_memory[curr_frame_num * PAGE_SIZE + curr_offset: curr_frame_num * PAGE_SIZE + curr_offset + 1]
                     state = END
                 else:
                     tlb_miss_count += 1
@@ -112,8 +115,9 @@ def memSim(rsf_name, frames, pra):
                 print(TLBUFF)
                 TLBUFF[tlb_counter] = [curr_page_num, curr_frame_num]
                 tlb_counter += 1
-                frame_num += 1
 
+                #increment frame number for next address
+                frame_num += 1
                 state = END
         #end state - FSM completed
         #convert reference byte to int
@@ -122,23 +126,26 @@ def memSim(rsf_name, frames, pra):
         print_addr(curr_addr, ref_byte_int, curr_frame_num, page_data.hex().upper())
 
     #completed program, print metrics
+    print(TLBUFF)
     print_metrics(total_addrs, tlb_hit_count, tlb_miss_count, page_fault_count)
     return
 
 #function to check if page is in tlb
-def check_tlb():
-    return None
+def check_tlb(page_num):
+    #TLBUFF is a list containing vals representing [page_num, frame_num]
+    for val in TLBUFF:
+        if(val and val[0] == page_num):
+            return True, val[1]
+    return False, 0
 
 #function to check if page is in ptable
 def check_ptable(page_num):
-    ptable_flag = False
     # Check if the given page number is in the page table
     if PAGE_TABLE[page_num] is not None and PAGE_TABLE[page_num]['present'] is True:
         # If page is present, return the corresponding frame number
-        ptable_flag = True
-        return ptable_flag,PAGE_TABLE[page_num]['frame']
+        return True, PAGE_TABLE[page_num]['frame']
     # If page is not present, return False
-    return ptable_flag, 0
+    return False, 0
 
 #function to get page from backing store file
 def get_page(page_num, page_offset):
