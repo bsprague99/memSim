@@ -10,10 +10,11 @@ BACKING_STORE = "BACKING_STORE.bin"
 BACKING_STORE_SIZE = 65536
 BACKING_STORE_PAGE_SIZE = 256
 
-TLB_PAGE_NUM = [(None)] * TLB_SIZE
-TLB_FRAME_NUM = [(None)] * TLB_SIZE
+TLBUFF = [None] * TLB_SIZE # containing vals representing [page_num, frame_num]
 
-PAGE_TABLE = [(None)] * PAGE_SIZE
+PAGE_TABLE = [None] * PAGE_SIZE
+
+PHYSICAL_MEMORY_SIZE = PAGE_SIZE
 
 #Define a dictionary to store each page table entry
 entry = {'present': False, 'frame': None}
@@ -31,7 +32,11 @@ def memSim(rsf_name, frames, pra):
     #   rsf_name = name of a file containing the list of logical memory addresses
     #   frames = integeger 0 < and <= 256 representing the number of frames in the system
     #   pra = page replacement algorithm - first-in first-out (FIFO), least recently used (LRU), optimal (OPT)
+    #physical memory of size frames * 256 bytes
     memory_size = PAGE_SIZE * frames
+    # Initialize the physical memory to all zeros
+    physical_memory = bytearray(memory_size)
+
     #read the rsf to get  a list of address objects formatted [logical_addr, page_num, offset]
     addrs = read_rsf(rsf_name)
     back_store = open(BACKING_STORE, "rb")
@@ -40,27 +45,36 @@ def memSim(rsf_name, frames, pra):
     for i in range(PAGE_SIZE):
         PAGE_TABLE[i] = entry.copy()
         
-        
-
     #counters to keep track of tlb hits, tlb misses, and page faults for metrics
     tlb_hit_count = 0
     tlb_miss_count = 0
     page_fault_count = 0
     total_addrs = len(addrs)
 
+    tlb_counter = 0  
+      
+    frame_num = 0 #index for physical memory
+
     for addr in addrs: #loop through all the addresses in the list of addresses
         #implementing a finite state machine to look for page
         state = START
-        found = False
+        #current address, page number, and offset
+        curr_addr = addr[0]
+        curr_page_num = addr[2]
+        curr_offset = addr[1]
+        found_flag = False #flag to check if the page has been found or nah
+
         while(state != END):
             if state == START:
                 #do something & move to next state
+                #print("in start %d" % curr_addr)
                 state = TLB
             #first check the tlb for the page
             elif state == TLB:
                 #check if the page is in the tlb, if it is, yay, if not, check page table for page
-                found = check_tlb()
-                if(found):
+                #print("in tlb %d" % curr_addr)
+                found_flag = check_tlb()
+                if(found_flag):
                     tlb_hit_count += 1
                     state = END
                 else:
@@ -69,47 +83,84 @@ def memSim(rsf_name, frames, pra):
             #next check the page table for the page
             elif state == PTABLE:
                 #check if the page is in the page table, if it is, yay, if not, retrieve page from backing store
-                found = check_ptable(addr[2])
-                if(found):
+                #print("in ptable %d" % curr_addr)
+                found_flag, curr_frame_num = check_ptable(curr_page_num)
+                if(found_flag):
+                    #page is located in p_table yay, pull page data from physical memory using the frame number
+                    page_data = physical_memory[curr_frame_num * PAGE_SIZE:(curr_frame_num * PAGE_SIZE + PAGE_SIZE)]
+                    ref_byte = physical_memory[curr_frame_num * PAGE_SIZE + curr_offset: curr_frame_num * PAGE_SIZE + curr_offset + 1]
                     state = END
                 else:
+                    #page fault occured, get page from backing store
                     page_fault_count += 1
                     state = BSTOR
             #if it table look up fails, check the backing store memory to retrieve page
             elif state == BSTOR:
-                get_page(back_store)
+                #get page data from the backing store
+                page_data = get_page(curr_page_num, curr_offset)   
+                #load into physical memory
+                physical_memory[frame_num * PAGE_SIZE:(frame_num * PAGE_SIZE + PAGE_SIZE)] = page_data
+                ref_byte = page_data[curr_offset: curr_offset + 1]
+                #add current page to page table
+                #must map frame num to page num in the page table
+                PAGE_TABLE[curr_page_num]['present'] = True
+                PAGE_TABLE[curr_page_num]['frame'] = frame_num
+                curr_frame_num = frame_num #set frame number for printing
+
+                #add current page to TLB
+                print(tlb_counter)
+                print(TLBUFF)
+                TLBUFF[tlb_counter] = [curr_page_num, curr_frame_num]
+                tlb_counter += 1
+                frame_num += 1
+
                 state = END
-        #end state - FSM completed, print address metrics
-        #print_addr(addr, ref_byte, mem_frame_num, content) #uncomment once vals are determined
-        print_addr(addr, 0, 0, "content")
+        #end state - FSM completed
+        #convert reference byte to int
+        ref_byte_int = int.from_bytes(ref_byte, 'little', signed=True)
+        #print metrics for each logical address
+        print_addr(curr_addr, ref_byte_int, curr_frame_num, page_data.hex().upper())
+
     #completed program, print metrics
     print_metrics(total_addrs, tlb_hit_count, tlb_miss_count, page_fault_count)
     return
 
 #function to check if page is in tlb
 def check_tlb():
-    found = True
-    return found
+    return None
 
 #function to check if page is in ptable
 def check_ptable(page_num):
+    ptable_flag = False
     # Check if the given page number is in the page table
-    if PAGE_TABLE[page_num] is not None and PAGE_TABLE[page_num]['present']:
-        # If page is present, update the TLB and return the corresponding frame number
-        # If page is not present, return False
-        found = False
-    return found
+    if PAGE_TABLE[page_num] is not None and PAGE_TABLE[page_num]['present'] is True:
+        # If page is present, return the corresponding frame number
+        ptable_flag = True
+        return ptable_flag,PAGE_TABLE[page_num]['frame']
+    # If page is not present, return False
+    return ptable_flag, 0
 
 #function to get page from backing store file
-def get_page(back_store, page_num):
-    # Calculate the offset in the backing store file
-    offset = page_num * PAGE_SIZE
-    # Open the backing store file and seek to the correct offset
-    with back_store as f:
-        f.seek(offset)
+def get_page(page_num, page_offset):
+   with open(BACKING_STORE, "rb") as back_store:
+        # Calculate the offset in the backing store file
+        offset = page_num * PAGE_SIZE
+        # Seek to the correct offset
+        back_store.seek(offset)
         # Read a page (256 bytes) from the file and return it
-        page_data = f.read(PAGE_SIZE)
+        page_data = back_store.read(PAGE_SIZE)
+        #ref_byte = getRefBit(back_store, page_num, page_offset)
         return page_data
+   
+#function to get reference byte
+def getRefBit(backing_store, page_num, offset): 
+    #find the reference byte in the backing store
+    backing_store.seek((page_num * PAGE_SIZE) + offset, 0)
+    #read in 1 byte value
+    ref_byte = backing_store.read(1)
+    #convert from byte to integer
+    ref_byte_int = int.from_bytes(ref_byte, 'little', signed=True)
+    return ref_byte_int
 
 #function to print the address values for output
 def print_addr(addr, ref_byte, mem_frame_num, content):
@@ -119,7 +170,7 @@ def print_addr(addr, ref_byte, mem_frame_num, content):
     # - The physical memory frame number (one positive integer) 
     # - The content of the entire frame (256 bytes in hex ASCII characters, no spaces in between) 
     # - new line character 
-    print("%d, %d, %d, %s" % (addr[0], ref_byte, mem_frame_num, content))
+    print("%d, %d, %d, %s" % (addr, ref_byte, mem_frame_num, content))
     return
 
 #function to calculate and print the metrics values for output
@@ -150,8 +201,9 @@ def read_rsf(rsf_name):
         # 0000 0000 1111 1111 -> mask = 0x00FF
         offset = addr & OFFSET_MASK
         #get page num LSB 8-15
-        # 1111 1111 0000 0000 -> mask = 0xFF00
+        # 1111 1111 0000 0000 -> mask = 0xFF00 132
         page_num = addr & PAGE_NUM_MASK
+        page_num = page_num >> 8 #shift value to get rid of trailing zeroes
         #append address object to list of addresses
         addrs.append([addr, offset, page_num])
     return addrs
@@ -182,5 +234,6 @@ if __name__ == '__main__':
         if(sys.argv[3] == "FIFO" or sys.argv[3] == "LRU" or sys.argv[3] == "OPT"):
             #algorithm valid, set pra
             pra = sys.argv[3]
+
     #call function with correct arguments
     memSim(file_name, frames, pra)
