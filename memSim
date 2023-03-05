@@ -135,6 +135,7 @@ def check_tlb(page_num):
     #TLBUFF is a list containing vals representing [page_num, frame_num]
     for val in TLBUFF:
         if(val and val[0] == page_num):
+            #tlb is populated and contains the desired page number
             return True, val[1]
     return False, 0
 
