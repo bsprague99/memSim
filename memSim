@@ -5,12 +5,12 @@ PAGE_SIZE = 256
 OFFSET_MASK = 0x00FF
 PAGE_NUM_MASK = 0xFF00
 
-TLB_SIZE = 16
+TLB_SIZE = 16 #should actually be 16
 BACKING_STORE = "BACKING_STORE.bin"
 BACKING_STORE_SIZE = 65536
 BACKING_STORE_PAGE_SIZE = 256
 
-TLBUFF = [None] * TLB_SIZE # containing vals representing [page_num, frame_num]
+TLBUFF = [] # containing vals representing [page_num, frame_num]
 
 PAGE_TABLE = [None] * PAGE_SIZE
 
@@ -51,8 +51,8 @@ def memSim(rsf_name, frames, pra):
     page_fault_count = 0
     total_addrs = len(addrs)
 
-    tlb_counter = 0  
-      
+    tlb_count = 0 #number of pages in the tlb
+    tlb_old = 0 #oldest value in the tlb
     frame_num = 0 #index for physical memory
 
     for addr in addrs: #loop through all the addresses in the list of addresses
@@ -111,10 +111,18 @@ def memSim(rsf_name, frames, pra):
                 curr_frame_num = frame_num #set frame number for printing
 
                 #add current page to TLB
-                print(tlb_counter)
-                print(TLBUFF)
-                TLBUFF[tlb_counter] = [curr_page_num, curr_frame_num]
-                tlb_counter += 1
+                if(tlb_count >= TLB_SIZE):
+                    #tlb is full
+                    #FIFO - remove & replace oldest value with current value
+                    TLBUFF[tlb_old] = [curr_page_num, curr_frame_num]
+                    #wrap around val
+                    tlb_old = (tlb_old + 1) % TLB_SIZE
+                    #tlb remains full
+                    tlb_count = TLB_SIZE
+                else:
+                    #tlb has space, add vals to the tail of the queue
+                    TLBUFF.append([curr_page_num, curr_frame_num])
+                    tlb_count += 1
 
                 #increment frame number for next address
                 frame_num += 1
@@ -126,7 +134,6 @@ def memSim(rsf_name, frames, pra):
         print_addr(curr_addr, ref_byte_int, curr_frame_num, page_data.hex().upper())
 
     #completed program, print metrics
-    print(TLBUFF)
     print_metrics(total_addrs, tlb_hit_count, tlb_miss_count, page_fault_count)
     return
 
