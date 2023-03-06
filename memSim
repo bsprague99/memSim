@@ -124,25 +124,30 @@ def memSim(rsf_name, frames, pra):
                 if(pra.upper() == "LRU"):
                     curr_frame_num, ref_byte, frame_count, frame_num, tlb_count, page_queue = run_lru(page_data, physical_memory, curr_page_num, curr_offset, frame_num, frame_count, frames, tlb_count, page_queue)
                 elif(pra.upper() == "OPT"):
-                    curr_frame_num, ref_byte = run_opt()
+                    curr_frame_num, ref_byte, frame_count, frame_num, tlb_count, page_queue = run_opt(page_data, physical_memory, curr_page_num, curr_offset, frame_num, frame_count, frames, tlb_count, page_queue, addrs)
                 else:
                     #by default, run FIFO
                     curr_frame_num, ref_byte, frame_count, frame_num, tlb_count = run_fifo(page_data, physical_memory, curr_page_num, curr_offset, frame_num, frame_count, frames, tlb_count)
 
                 state = END
         #end state - FSM completed
+        #(ONLY FOR OPT)decrement all the time untils by 1
+        if(pra.upper() == "OPT"):
+            if(page_queue):
+                page_queue = decrement_wait_until(page_queue, addrs)
         #convert reference byte to int
         ref_byte_int = int.from_bytes(ref_byte, 'little', signed=True)
         #print metrics for each logical address
-        # print(TLBUFF)
-        # print("page_fault %d" % page_fault_count)
-        # print(page_queue)
-        # input()
+        print("TLB", TLBUFF)
+        print("page_fault %d" % page_fault_count)
+        print("page queue", page_queue)
+        input()
         print_addr(curr_addr, ref_byte_int, curr_frame_num, page_data.hex().upper())
 
     #completed program, print metrics
     print_metrics(total_addrs, tlb_hit_count, tlb_miss_count, page_fault_count)
     return
+
 
 #function to update values in the tlb
 def update_tlb(tlb_count, curr_page_num, curr_frame_num):
@@ -239,11 +244,89 @@ def run_lru(page_data, physical_memory, curr_page_num, curr_offset, frame_num, f
     return curr_frame_num, ref_byte, frame_count, frame_num, tlb_count, page_queue
 
 #function to run optimal replacement algorithm
-def run_opt():
-    curr_frame_num = 0
-    ref_byte = 0
-    return curr_frame_num, ref_byte
+def run_opt(page_data, physical_memory, curr_page_num, curr_offset, frame_num, frame_count, frames, tlb_count, page_queue, addrs):
+    #load into physical memory
+    physical_memory[frame_num * PAGE_SIZE:(frame_num * PAGE_SIZE + PAGE_SIZE)] = page_data
+    ref_byte = page_data[curr_offset: curr_offset + 1]
+   
+    #page_queue contains [page_num, time_until]
+    #update page table
+    #must map frame num to page num in the page table
+    if(frame_count >= frames):
+        #physical memory full, upate page
+        #calculate which value takes the most time until
+        #sort pages in ascending order of time until before removing
+        page_queue.sort(key=lambda page_queue: page_queue[0], reverse = True)
+        print("page queue", page_queue)
+        
+        removed_page = page_queue.pop(0) #remove the oldest val from the page queue
+        removed_page_num = removed_page[0]
+        #remove this page num from page table
+        PAGE_TABLE[removed_page_num]['present'] = False
+        PAGE_TABLE[removed_page_num]['frame'] = None
+        
+        #update page table to map page_num to the updated frame num
+        PAGE_TABLE[curr_page_num]['present'] = True
+        PAGE_TABLE[curr_page_num]['frame'] = frame_num
+        #add current page number to the end of the page queue (it is most recently used)
+        time_until= calc_time_until(addrs, curr_page_num)
+        page_queue.append([curr_page_num, time_until])
 
+        #update TLB table to map page_num to the updated frame num
+        for page in TLBUFF:
+            if(page[0] == removed_page_num):
+                TLBUFF.remove(page)
+        #physical memory remains full
+        frame_count = frames
+    else:
+        PAGE_TABLE[curr_page_num]['present'] = True
+        PAGE_TABLE[curr_page_num]['frame'] = frame_num
+        #append page_num to the end of the queue
+        #calculate time until
+        time_until = calc_time_until(addrs, curr_page_num)
+        page_queue.append([curr_page_num, time_until])
+        frame_count += 1
+
+    tlb_count = update_tlb(tlb_count, curr_page_num, frame_num)
+    #return current frame_num before incrementing
+    curr_frame_num = frame_num
+    #increment frame number for next address
+    frame_num = (frame_num + 1) % frames 
+    return curr_frame_num, ref_byte, frame_count, frame_num, tlb_count, page_queue
+
+#returns time until is seen again
+def calc_time_until(addrs, curr_page_num):
+    times_found = 0
+    time = 0
+    time_arrive = 0
+    for addr in addrs:
+        #addr[2] = page_num
+        #find next occurrence of curr_page_num
+        if(addr[2] == curr_page_num):
+            if(times_found == 0):
+                #keep track of the time that the page first appeared
+                time_arrive = time
+            times_found += 1
+        if(times_found == 2):
+            #once the next occurrence is found, return the time it took to occur
+            return time - time_arrive
+        time += 1
+    #page num never appears again
+    return None
+
+#function to decrement all the existing time until vals
+def decrement_wait_until(page_queue, addrs):
+    for item in page_queue:
+        if(page_queue):
+            if(item and item[1]):
+                item[1] -= 1
+                if(item[1] <= 0):
+                #recalculate time until
+                    time_until = calc_time_until(addrs, item[1])
+                    item[1] = time_until
+    return page_queue
+
+    
 #function to check if page is in tlb
 def check_tlb(page_num):
     #TLBUFF is a list containing vals representing [page_num, frame_num]
