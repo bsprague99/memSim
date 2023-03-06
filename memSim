@@ -55,6 +55,7 @@ def memSim(rsf_name, frames, pra):
     tlb_count = 0 #number of pages in the tlb
     frame_num = 0 #index for physical memory
     frame_count = 0 #keep track of number of frames
+    page_queue = [] #queue of page nums for LRU
 
     for addr in addrs: #loop through all the addresses in the list of addresses
         #implementing a finite state machine to look for page
@@ -65,6 +66,7 @@ def memSim(rsf_name, frames, pra):
         curr_offset = addr[1]
         found_flag = False #flag to check if the page has been found or nah
 
+        #print("curr page num %d" % curr_page_num)
         while(state != END):
             if state == START:
                 #do something & move to next state
@@ -76,6 +78,14 @@ def memSim(rsf_name, frames, pra):
                 #print("in tlb %d" % curr_addr)
                 found_flag, curr_frame_num = check_tlb(curr_page_num)
                 if(found_flag):
+                    #(MATTERS FOR LRU ONLY) found the page, but update the page queue to reflect that page was most recently used
+                    if(pra.upper() == "LRU"):
+                        if(curr_page_num in page_queue):
+                            page_queue.remove(curr_page_num)
+                        else:
+                            page_queue.pop(0)
+                        page_queue.append(curr_page_num)
+
                     tlb_hit_count += 1
                     #page is located in tlb yay, pull page data from physical memory using the frame number
                     page_data = physical_memory[curr_frame_num * PAGE_SIZE:(curr_frame_num * PAGE_SIZE + PAGE_SIZE)]
@@ -87,9 +97,19 @@ def memSim(rsf_name, frames, pra):
             #next check the page table for the page
             elif state == PTABLE:
                 #check if the page is in the page table, if it is, yay, if not, retrieve page from backing store
+                #print("in ptable %d" % curr_addr)
                 found_flag, curr_frame_num = check_ptable(curr_page_num)
                 if(found_flag):
-                    #page is located in p_table yay, pull page data from physical memory using the frame number
+                    #page is located in p_table yay
+                    #(MATTERS FOR LRU ONLY) found the page, but update the page queue to reflect that page was most recently used
+                    if(pra.upper() == "LRU"):
+                        if(curr_page_num in page_queue):
+                            page_queue.remove(curr_page_num)
+                        else:
+                            page_queue.pop(0)
+                        page_queue.append(curr_page_num)
+
+                    #pull page data from physical memory using the frame number
                     page_data = physical_memory[curr_frame_num * PAGE_SIZE:(curr_frame_num * PAGE_SIZE + PAGE_SIZE)]
                     ref_byte = physical_memory[curr_frame_num * PAGE_SIZE + curr_offset: curr_frame_num * PAGE_SIZE + curr_offset + 1]
                     state = END
@@ -102,7 +122,7 @@ def memSim(rsf_name, frames, pra):
                 #get page data from the backing store
                 page_data = get_page(curr_page_num, curr_offset)
                 if(pra.upper() == "LRU"):
-                    curr_frame_num, ref_byte = run_lru()
+                    curr_frame_num, ref_byte, frame_count, frame_num, tlb_count, page_queue = run_lru(page_data, physical_memory, curr_page_num, curr_offset, frame_num, frame_count, frames, tlb_count, page_queue)
                 elif(pra.upper() == "OPT"):
                     curr_frame_num, ref_byte = run_opt()
                 else:
@@ -114,6 +134,10 @@ def memSim(rsf_name, frames, pra):
         #convert reference byte to int
         ref_byte_int = int.from_bytes(ref_byte, 'little', signed=True)
         #print metrics for each logical address
+        # print(TLBUFF)
+        # print("page_fault %d" % page_fault_count)
+        # print(page_queue)
+        # input()
         print_addr(curr_addr, ref_byte_int, curr_frame_num, page_data.hex().upper())
 
     #completed program, print metrics
@@ -123,7 +147,7 @@ def memSim(rsf_name, frames, pra):
 #function to update values in the tlb
 def update_tlb(tlb_count, curr_page_num, curr_frame_num):
     #add current page to TLB
-    if(tlb_count >= TLB_SIZE):
+    if((tlb_count >= TLB_SIZE) and TLBUFF):
         #tlb is full
         #FIFO - remove value, add current value to the tail of the queue
         TLBUFF.pop(0)
@@ -131,7 +155,6 @@ def update_tlb(tlb_count, curr_page_num, curr_frame_num):
         #tlb remains full
         tlb_count = TLB_SIZE
     else:
-        #print("TLB has space")
         #tlb has space, add vals to the tail of the queue
         TLBUFF.append([curr_page_num, curr_frame_num])
         tlb_count += 1
@@ -146,7 +169,6 @@ def run_fifo(page_data, physical_memory, curr_page_num, curr_offset, frame_num, 
     #update page table
     #must map frame num to page num in the page table
     if(frame_count >= frames):
-        #print("\n replacing frame !! \n")
         #physical memory full, upate page
         #search page table to find the value that was originally set to frame_num & remove it from page table
         for page in PAGE_TABLE:
@@ -158,19 +180,14 @@ def run_fifo(page_data, physical_memory, curr_page_num, curr_offset, frame_num, 
         PAGE_TABLE[curr_page_num]['frame'] = frame_num
 
         #update TLB table to map page_num to the updated frame num
-        #print(TLBUFF)
         for page in TLBUFF:
-            #print("we get stuck?")
-            #print("frame num? %d" % page[1])
             if(page[1] == frame_num):
                 TLBUFF.remove(page)
         #physical memory remains full
         frame_count = frames
     else:
-        #print("PAGE FAULT !!")
         PAGE_TABLE[curr_page_num]['present'] = True
         PAGE_TABLE[curr_page_num]['frame'] = frame_num
-
         frame_count += 1
 
     tlb_count = update_tlb(tlb_count, curr_page_num, frame_num)
@@ -178,14 +195,48 @@ def run_fifo(page_data, physical_memory, curr_page_num, curr_offset, frame_num, 
     curr_frame_num = frame_num
     #increment frame number for next address
     frame_num = (frame_num + 1) % frames
-
     return curr_frame_num, ref_byte, frame_count, frame_num, tlb_count
 
-#function to run lru replacement algorithm
-def run_lru():
-    curr_frame_num = 0
-    ref_byte = 0
-    return curr_frame_num, ref_byte
+#function to run lru replacement algorithm !! attempting the stack implementation
+def run_lru(page_data, physical_memory, curr_page_num, curr_offset, frame_num, frame_count, frames, tlb_count, page_queue):
+    #load into physical memory
+    physical_memory[frame_num * PAGE_SIZE:(frame_num * PAGE_SIZE + PAGE_SIZE)] = page_data
+    ref_byte = page_data[curr_offset: curr_offset + 1]
+   
+    #update page table
+    #must map frame num to page num in the page table
+    if(frame_count >= frames):
+        #physical memory full, upate page
+        removed_page_num = page_queue.pop(0) #remove the oldest val from the page queue
+        #remove this page num from page table
+        PAGE_TABLE[removed_page_num]['present'] = False
+        PAGE_TABLE[removed_page_num]['frame'] = None
+        
+        #update page table to map page_num to the updated frame num
+        PAGE_TABLE[curr_page_num]['present'] = True
+        PAGE_TABLE[curr_page_num]['frame'] = frame_num
+        #add current page number to the end of the page queue (it is most recently used)
+        page_queue.append(curr_page_num)
+
+        #update TLB table to map page_num to the updated frame num
+        for page in TLBUFF:
+            if(page[0] == removed_page_num):
+                TLBUFF.remove(page)
+        #physical memory remains full
+        frame_count = frames
+    else:
+        PAGE_TABLE[curr_page_num]['present'] = True
+        PAGE_TABLE[curr_page_num]['frame'] = frame_num
+        #append page_num to the end of the queue
+        page_queue.append(curr_page_num)
+        frame_count += 1
+
+    tlb_count = update_tlb(tlb_count, curr_page_num, frame_num)
+    #return current frame_num before incrementing
+    curr_frame_num = frame_num
+    #increment frame number for next address
+    frame_num = (frame_num + 1) % frames 
+    return curr_frame_num, ref_byte, frame_count, frame_num, tlb_count, page_queue
 
 #function to run optimal replacement algorithm
 def run_opt():
