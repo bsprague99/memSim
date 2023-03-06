@@ -28,13 +28,14 @@ BSTOR = 3
 END = 4
 
 def memSim(rsf_name, frames, pra):
-    #inputs:
+    # inputs:
     #   rsf_name = name of a file containing the list of logical memory addresses
     #   frames = integeger 0 < and <= 256 representing the number of frames in the system
     #   pra = page replacement algorithm - first-in first-out (FIFO), least recently used (LRU), optimal (OPT)
-    #physical memory of size frames * 256 bytes
+    # physical memory of size frames * 256 bytes
     memory_size = PAGE_SIZE * frames
-    # Initialize the physical memory to all zeros
+
+    #initialize the physical memory to all zeros
     physical_memory = bytearray(memory_size)
 
     #read the rsf to get  a list of address objects formatted [logical_addr, page_num, offset]
@@ -79,6 +80,8 @@ def memSim(rsf_name, frames, pra):
                     #page is located in tlb yay, pull page data from physical memory using the frame number
                     page_data = physical_memory[curr_frame_num * PAGE_SIZE:(curr_frame_num * PAGE_SIZE + PAGE_SIZE)]
                     ref_byte = physical_memory[curr_frame_num * PAGE_SIZE + curr_offset: curr_frame_num * PAGE_SIZE + curr_offset + 1]
+
+                    # TLBUFF[tlb_old] = [curr_page_num, curr_frame_num] COMMENTED OUT BC EFFECTED CHECK TLB EDITS (not needed for correct tlb eviction choice)
                     state = END
                 else:
                     tlb_miss_count += 1
@@ -140,9 +143,13 @@ def memSim(rsf_name, frames, pra):
 #function to check if page is in tlb
 def check_tlb(page_num):
     #TLBUFF is a list containing vals representing [page_num, frame_num]
-    for val in TLBUFF:
+    for i, val in enumerate(TLBUFF):
+        # print(val)
         if(val and val[0] == page_num):
             #tlb is populated and contains the desired page number
+            #move entry to the end of TLB
+            TLBUFF.pop(i)
+            TLBUFF.append([page_num, val[1]])
             return True, val[1]
     return False, 0
 

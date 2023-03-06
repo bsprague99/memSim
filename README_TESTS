@@ -1,0 +1,241 @@
+These are micro test cases.  They are intended to be small enough that you could step through them by hand to understand how they work.  If you have a strong grasp on the algorithms, you will intuitively understand the results triggered by each.  These are the kind of test cases I'd expect you to generate in the first week.  And next time I teach 453 I'll probably make that an assignment. ;-)
+
+
+1_video_walkthrough.txt
+
+Start here!  This is the memory access example from the video I made.  If you can follow along with my explanation in Excel, you should also be able to step through your program and see the same results.  If not, you'll see where the trouble began.
+
+How to run it:
+./memSim 1_video_walkthrough.txt 3 FIFO
+./memSim 1_video_walkthrough.txt 3 LRU
+./memSim 1_video_walkthrough.txt 3 OPT
+
+Expected results:
+./memSim 1_video_walkthrough.txt 3 FIFO | tail -6
+Number of Translated Addresses = 20
+Page Faults = 15
+Page Fault Rate = 0.750
+TLB Hits = 14
+TLB Misses = 6
+TLB Hit Rate = 0.700
+
+./memSim 1_video_walkthrough.txt 3 LRU | tail -6
+Number of Translated Addresses = 20
+Page Faults = 12
+Page Fault Rate = 0.600
+TLB Hits = 14
+TLB Misses = 6
+TLB Hit Rate = 0.700
+
+./memSim 1_video_walkthrough.txt 3 OPT | tail -6 
+Number of Translated Addresses = 20
+Page Faults = 9
+Page Fault Rate = 0.450
+TLB Hits = 14
+TLB Misses = 6
+TLB Hit Rate = 0.700
+
+
+How I made it:
+I took the sequence of memory requests from the easy example spreadsheet, and multiplied each by 256.  
+
+Page numbers: 7 0 1 2 0 3 ...
+Multiply each by 256 (bytes/page): 1792 0 256 512 0 768 ...
+
+
+
+
+
+Small test cases following simple rules - small enough that you can follow along easily with what is happening:
+
+
+2_small_seq_one_page.txt
+
+The best case - purely sequential access through all bytes of a single page.  We page fault on the first access, and then all subsequent requests should hit on both memory and TLB.  Try testing with 1, 8, or more frames -- it should make no difference, as only one page should be required.
+
+How to run it:
+./memSim 2_small_seq_one_page.txt 1 <PRA>
+./memSim 2_small_seq_one_page.txt 8 <PRA>
+./memSim 2_small_seq_one_page.txt <some bigger number> <PRA>
+
+Expected results:
+
+./memSim 2_small_seq_one_page.txt 1 FIFO | tail -6
+Number of Translated Addresses = 256
+Page Faults = 1
+Page Fault Rate = 0.004
+TLB Hits = 255
+TLB Misses = 1
+TLB Hit Rate = 0.996
+
+
+How I made it (my code is in Perl, a nearly dead language that I can speak in my sleep, but you get the idea):
+for ($i=0; $i<256; $i++)  
+  print($i . "\n");
+
+
+3_small_skipping.txt
+
+The worst case - read the first byte of each page.  This skipping behavior ensures we page fault on every access.  Again, try testing with 1, 8 or more frames.  We never revisit a page, so we'll fault every time regardless of frame count and algorithm.
+
+How to run it:
+./memSim 3_small_skipping.txt 1 <PRA>
+./memSim 3_small_skipping.txt 8 <PRA>
+./memSim 3_small_skipping.txt 256 <PRA>
+
+Expected results:
+./memSim 3_small_skipping.txt 64 OPT | tail -6
+Number of Translated Addresses = 256
+Page Faults = 256
+Page Fault Rate = 1.000
+TLB Hits = 0
+TLB Misses = 256
+TLB Hit Rate = 0.000
+
+
+How I made it:
+for ($i=0; $i<256; $i++)
+  print($i * 256 . "\n");
+
+
+4_small_pareto.txt
+
+PERHAPS THE MOST INTERESTING CASE.  A representative case.  The Pareto Principle, or "80/20 Rule", is a broad concept beyond operating systems.  It suggests things like: 80% of memory accesses will be to only 20% of pages.  Or on a programming assignment, 80% of your time will be spent on 20% of the features.  Or, 80% of a professor's time spent grading will be on 20% of the submissions.  All reasonable assumptions until you have better data!
+
+How to run it:
+./memSim 4_small_pareto.txt 64 <PRA>
+
+Expected results:
+I'm not giving you exact results.  Instead, what is your intuition about the hit/miss rates for each algorithm? Does it match the results you see?
+
+Okay, okay!  With 64 frames, I got these page fault rates. 
+FIFO 0.438
+LRU  0.382
+OPT  0.262
+
+
+How I made it:
+20% of 256 pages = first 50 or so pages
+And 80% = 4 out of 5
+So: generate four requests to a random page in the first 50, then a request to a random page 51..255.  Repeat 100 times.
+
+for ($count=0;$count<100;$count++)
+{
+	# 4 random requests from first 20% of pages
+	for ($x=0;$x<4;$x++)
+	{
+		print(int(rand(.2*256)*256 + int(rand(256))) . "\n");
+	}
+
+	# 1 random request from last 80% of pages
+	print(int(rand(.8*256)+.2*256)*256 + int(rand(256)) . "\n");
+}
+
+
+
+Big test cases following simple rules - exhaustive, corresponding to the spirit of the above test cases:
+
+5_large_seq_all_bytes.txt
+
+Best case - sequential access through entire memory space.
+
+How to run it:
+./memSim 5_large_seq_all_bytes.txt 64 <PRA>
+
+Expected results: 
+One fault per page.  Whether we have 1 frame, 64 frames, or 256.  Regardless of algorithm.
+TLB misses, same: 256, one per page.
+With 65k inputs, if your simulation is inefficient this may take some time to run.  That's okay, I told you not to worrry about performance.  That said, a "pretty alright" implementation in Python will take <10 seconds to run on a typical laptop.  Yours may take a minute or more. If it takes >5 minutes, don't sweat it but perhaps do think about "where is my program spending all of its time?"
+
+
+How I made it:
+for ($i=0;$i<256*256;$i++)
+{
+    print("$i\n");
+}
+
+
+6_large_skipping.txt
+
+Absolute, most awful, Worst case - skipping access through entire memory space.  First byte of each page, then second byte of each page, etc.  This is the "pathological" example we talked about in Lecture, where one outer/inner loop variation had 128 times as many page faults as the more "mechanically sympathetic" variation.  
+
+How to run it:
+./memSim 6_large_skipping.txt 64 <PRA>
+
+Expected results: 
+All faults, all the time!  Realy grim.
+./memSim 6_large_skipping.txt 255 FIFO | tail -6
+Number of Translated Addresses = 65536
+Page Faults = 65536
+Page Fault Rate = 1.000
+TLB Hits = 0
+TLB Misses = 65536
+TLB Hit Rate = 0.000
+
+
+How I made it:
+
+for ($offset=0;$offset<256;$offset++)
+{
+    for ($page=0;$page<256;$page++)
+    {
+        print(($page*256 + $offset) . "\n");
+    }
+}
+
+
+7_jumbo_random.txt
+
+Purely random.  Evently distributed, with no 80/20 rule.  With no temporal locality, does any algorithm give much benefit?  What is your intuition, and what do you observe?
+
+With 4*65k inputs, this will really bring out the inefficiencies in your programs.  It may take a looong time to run.  Do you observe that any of your algorithms take more time to complete?  Without feeling compelled to make improvements, what is the Big O complexity of each of your algorithm implementations?
+
+
+How to run it:
+./memSim 7_jumbo_random.txt 64 <PRA>
+(try different values for frames)
+
+Expected results: 
+Faults will depend on how many frames you give.  If you have 256 frames, corresponding with 256 pages, then of course we expect one fault per page.  But if you have fewer frames, then you get to really see how your eviction algorithms perform.  
+
+With 64 frames (1/4 of pages), I noticed that fault rate was 75% with FIFO and LRU.  Hmm.  Your intuition?  With OPT, I hit 40% fault rate.  
+
+My TLB hit rate was 6.3%. I also noticed 16 TLB entries / 256 pages = 0.0625.  Coincidence?
+
+
+time ./memSim 7_jumbo_random.txt 64 FIFO | tail -6 
+Number of Translated Addresses = 262144
+Page Faults = 196390
+Page Fault Rate = 0.749
+TLB Hits = 16472
+TLB Misses = 245672
+TLB Hit Rate = 0.063
+./memSim 7_jumbo_random.txt 64 FIFO  195.20s user 9.01s system 99% cpu 3:24.45 total
+
+time ./memSim 7_jumbo_random.txt 64 LRU | tail -6
+Number of Translated Addresses = 262144
+Page Faults = 196537
+Page Fault Rate = 0.750
+TLB Hits = 16472
+TLB Misses = 245672
+TLB Hit Rate = 0.063
+./memSim 7_jumbo_random.txt 64 LRU  195.07s user 8.70s system 99% cpu 3:23.81 total
+
+time ./memSim 7_jumbo_random.txt 64 OPT | tail -6
+Number of Translated Addresses = 262144
+Page Faults = 105826
+Page Fault Rate = 0.404
+TLB Hits = 16472
+TLB Misses = 245672
+TLB Hit Rate = 0.063
+./memSim 7_jumbo_random.txt 64 OPT  195.95s user 9.11s system 99% cpu 3:25.10 total
+tail -6  2.51s user 0.10s system 1% cpu 3:25.10 total
+
+
+How I made it:
+# access entire memory space, four times over, in random fashion
+for ($count=0;$count<256*256*4;$count++)
+{
+        # random page, random offset
+        print( int(rand(256))*256 + int(rand(256)) . "\n");
+}
