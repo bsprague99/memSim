@@ -53,8 +53,8 @@ def memSim(rsf_name, frames, pra):
     total_addrs = len(addrs)
 
     tlb_count = 0 #number of pages in the tlb
-    tlb_old = 0 #oldest value in the tlb
     frame_num = 0 #index for physical memory
+    frame_count = 0 #keep track of number of frames
 
     for addr in addrs: #loop through all the addresses in the list of addresses
         #implementing a finite state machine to look for page
@@ -80,8 +80,6 @@ def memSim(rsf_name, frames, pra):
                     #page is located in tlb yay, pull page data from physical memory using the frame number
                     page_data = physical_memory[curr_frame_num * PAGE_SIZE:(curr_frame_num * PAGE_SIZE + PAGE_SIZE)]
                     ref_byte = physical_memory[curr_frame_num * PAGE_SIZE + curr_offset: curr_frame_num * PAGE_SIZE + curr_offset + 1]
-
-                    # TLBUFF[tlb_old] = [curr_page_num, curr_frame_num] COMMENTED OUT BC EFFECTED CHECK TLB EDITS (not needed for correct tlb eviction choice)
                     state = END
                 else:
                     tlb_miss_count += 1
@@ -89,7 +87,6 @@ def memSim(rsf_name, frames, pra):
             #next check the page table for the page
             elif state == PTABLE:
                 #check if the page is in the page table, if it is, yay, if not, retrieve page from backing store
-                #print("in ptable %d" % curr_addr)
                 found_flag, curr_frame_num = check_ptable(curr_page_num)
                 if(found_flag):
                     #page is located in p_table yay, pull page data from physical memory using the frame number
@@ -103,32 +100,15 @@ def memSim(rsf_name, frames, pra):
             #if it table look up fails, check the backing store memory to retrieve page
             elif state == BSTOR:
                 #get page data from the backing store
-                page_data = get_page(curr_page_num, curr_offset)   
-                #load into physical memory
-                physical_memory[frame_num * PAGE_SIZE:(frame_num * PAGE_SIZE + PAGE_SIZE)] = page_data
-                ref_byte = page_data[curr_offset: curr_offset + 1]
-                #add current page to page table
-                #must map frame num to page num in the page table
-                PAGE_TABLE[curr_page_num]['present'] = True
-                PAGE_TABLE[curr_page_num]['frame'] = frame_num
-                curr_frame_num = frame_num #set frame number for printing
-
-                #add current page to TLB
-                if(tlb_count >= TLB_SIZE):
-                    #tlb is full
-                    #FIFO - remove & replace oldest value with current value
-                    TLBUFF[tlb_old] = [curr_page_num, curr_frame_num]
-                    #wrap around val
-                    tlb_old = (tlb_old + 1) % TLB_SIZE
-                    #tlb remains full
-                    tlb_count = TLB_SIZE
+                page_data = get_page(curr_page_num, curr_offset)
+                if(pra.upper() == "LRU"):
+                    curr_frame_num, ref_byte = run_lru()
+                elif(pra.upper() == "OPT"):
+                    curr_frame_num, ref_byte = run_opt()
                 else:
-                    #tlb has space, add vals to the tail of the queue
-                    TLBUFF.append([curr_page_num, curr_frame_num])
-                    tlb_count += 1
+                    #by default, run FIFO
+                    curr_frame_num, ref_byte, frame_count, frame_num, tlb_count = run_fifo(page_data, physical_memory, curr_page_num, curr_offset, frame_num, frame_count, frames, tlb_count)
 
-                #increment frame number for next address
-                frame_num += 1
                 state = END
         #end state - FSM completed
         #convert reference byte to int
@@ -139,6 +119,79 @@ def memSim(rsf_name, frames, pra):
     #completed program, print metrics
     print_metrics(total_addrs, tlb_hit_count, tlb_miss_count, page_fault_count)
     return
+
+#function to update values in the tlb
+def update_tlb(tlb_count, curr_page_num, curr_frame_num):
+    #add current page to TLB
+    if(tlb_count >= TLB_SIZE):
+        #tlb is full
+        #FIFO - remove value, add current value to the tail of the queue
+        TLBUFF.pop(0)
+        TLBUFF.append([curr_page_num, curr_frame_num])
+        #tlb remains full
+        tlb_count = TLB_SIZE
+    else:
+        #print("TLB has space")
+        #tlb has space, add vals to the tail of the queue
+        TLBUFF.append([curr_page_num, curr_frame_num])
+        tlb_count += 1
+    return tlb_count
+    
+#function to run fifo replacement algorithm
+def run_fifo(page_data, physical_memory, curr_page_num, curr_offset, frame_num, frame_count, frames, tlb_count):
+    #load into physical memory
+    physical_memory[frame_num * PAGE_SIZE:(frame_num * PAGE_SIZE + PAGE_SIZE)] = page_data
+    ref_byte = page_data[curr_offset: curr_offset + 1]
+
+    #update page table
+    #must map frame num to page num in the page table
+    if(frame_count >= frames):
+        #print("\n replacing frame !! \n")
+        #physical memory full, upate page
+        #search page table to find the value that was originally set to frame_num & remove it from page table
+        for page in PAGE_TABLE:
+            if page['frame'] == frame_num:
+                page['present'] = False
+                page['frame'] = None
+        #update page table to map page_num to the updated frame num
+        PAGE_TABLE[curr_page_num]['present'] = True
+        PAGE_TABLE[curr_page_num]['frame'] = frame_num
+
+        #update TLB table to map page_num to the updated frame num
+        #print(TLBUFF)
+        for page in TLBUFF:
+            #print("we get stuck?")
+            #print("frame num? %d" % page[1])
+            if(page[1] == frame_num):
+                TLBUFF.remove(page)
+        #physical memory remains full
+        frame_count = frames
+    else:
+        #print("PAGE FAULT !!")
+        PAGE_TABLE[curr_page_num]['present'] = True
+        PAGE_TABLE[curr_page_num]['frame'] = frame_num
+
+        frame_count += 1
+
+    tlb_count = update_tlb(tlb_count, curr_page_num, frame_num)
+    #return current frame_num before incrementing
+    curr_frame_num = frame_num
+    #increment frame number for next address
+    frame_num = (frame_num + 1) % frames
+
+    return curr_frame_num, ref_byte, frame_count, frame_num, tlb_count
+
+#function to run lru replacement algorithm
+def run_lru():
+    curr_frame_num = 0
+    ref_byte = 0
+    return curr_frame_num, ref_byte
+
+#function to run optimal replacement algorithm
+def run_opt():
+    curr_frame_num = 0
+    ref_byte = 0
+    return curr_frame_num, ref_byte
 
 #function to check if page is in tlb
 def check_tlb(page_num):
