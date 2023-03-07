@@ -56,6 +56,15 @@ def memSim(rsf_name, frames, pra):
     frame_num = 0 #index for physical memory
     frame_count = 0 #keep track of number of frames
     page_queue = [] #queue of page nums for LRU
+    page_times = [] #list containing pages and times for OPT
+    curr_time = 0 #keeping track of current time 
+
+    if(pra.upper() == "OPT"):
+        #populate the pages list with page_nums and the "time" it arrives for all the addresses in addrs
+        time = 0
+        for addr in addrs:
+            page_times.append([addr[2], time])
+            time += 1
 
     for addr in addrs: #loop through all the addresses in the list of addresses
         #implementing a finite state machine to look for page
@@ -66,16 +75,16 @@ def memSim(rsf_name, frames, pra):
         curr_offset = addr[1]
         found_flag = False #flag to check if the page has been found or nah
 
-        #print("curr page num %d" % curr_page_num)
+        print("current time %d" % curr_time)
         while(state != END):
             if state == START:
                 #do something & move to next state
-                #print("in start %d" % curr_addr)
+                print("in start %d" % curr_addr)
                 state = TLB
             #first check the tlb for the page
             elif state == TLB:
                 #check if the page is in the tlb, if it is, yay, if not, check page table for page
-                #print("in tlb %d" % curr_addr)
+                print("in tlb %d" % curr_addr)
                 found_flag, curr_frame_num = check_tlb(curr_page_num)
                 if(found_flag):
                     #(MATTERS FOR LRU ONLY) found the page, but update the page queue to reflect that page was most recently used
@@ -97,7 +106,7 @@ def memSim(rsf_name, frames, pra):
             #next check the page table for the page
             elif state == PTABLE:
                 #check if the page is in the page table, if it is, yay, if not, retrieve page from backing store
-                #print("in ptable %d" % curr_addr)
+                print("in ptable %d" % curr_addr)
                 found_flag, curr_frame_num = check_ptable(curr_page_num)
                 if(found_flag):
                     #page is located in p_table yay
@@ -124,7 +133,7 @@ def memSim(rsf_name, frames, pra):
                 if(pra.upper() == "LRU"):
                     curr_frame_num, ref_byte, frame_count, frame_num, tlb_count, page_queue = run_lru(page_data, physical_memory, curr_page_num, curr_offset, frame_num, frame_count, frames, tlb_count, page_queue)
                 elif(pra.upper() == "OPT"):
-                    curr_frame_num, ref_byte, frame_count, frame_num, tlb_count, page_queue = run_opt(page_data, physical_memory, curr_page_num, curr_offset, frame_num, frame_count, frames, tlb_count, page_queue, addrs)
+                    curr_frame_num, ref_byte, frame_count, frame_num, tlb_count, page_queue = run_opt(page_data, physical_memory, curr_page_num, curr_offset, frame_num, frame_count, frames, tlb_count, page_queue, page_times, curr_time)
                 else:
                     #by default, run FIFO
                     curr_frame_num, ref_byte, frame_count, frame_num, tlb_count = run_fifo(page_data, physical_memory, curr_page_num, curr_offset, frame_num, frame_count, frames, tlb_count)
@@ -134,15 +143,20 @@ def memSim(rsf_name, frames, pra):
         #(ONLY FOR OPT)decrement all the time untils by 1
         if(pra.upper() == "OPT"):
             if(page_queue):
-                page_queue = decrement_wait_until(page_queue, addrs)
+                page_queue = decrement_wait_until(page_queue, page_times)
+
+        #keep track of current_time
+        curr_time += 1
+     
         #convert reference byte to int
         ref_byte_int = int.from_bytes(ref_byte, 'little', signed=True)
         #print metrics for each logical address
+        print_addr(curr_addr, ref_byte_int, curr_frame_num, page_data.hex().upper())
+
         print("TLB", TLBUFF)
         print("page_fault %d" % page_fault_count)
         print("page queue", page_queue)
         input()
-        print_addr(curr_addr, ref_byte_int, curr_frame_num, page_data.hex().upper())
 
     #completed program, print metrics
     print_metrics(total_addrs, tlb_hit_count, tlb_miss_count, page_fault_count)
@@ -244,7 +258,7 @@ def run_lru(page_data, physical_memory, curr_page_num, curr_offset, frame_num, f
     return curr_frame_num, ref_byte, frame_count, frame_num, tlb_count, page_queue
 
 #function to run optimal replacement algorithm
-def run_opt(page_data, physical_memory, curr_page_num, curr_offset, frame_num, frame_count, frames, tlb_count, page_queue, addrs):
+def run_opt(page_data, physical_memory, curr_page_num, curr_offset, frame_num, frame_count, frames, tlb_count, page_queue, page_times, curr_time):
     #load into physical memory
     physical_memory[frame_num * PAGE_SIZE:(frame_num * PAGE_SIZE + PAGE_SIZE)] = page_data
     ref_byte = page_data[curr_offset: curr_offset + 1]
@@ -256,10 +270,11 @@ def run_opt(page_data, physical_memory, curr_page_num, curr_offset, frame_num, f
         #physical memory full, upate page
         #calculate which value takes the most time until
         #sort pages in ascending order of time until before removing
-        page_queue.sort(key=lambda page_queue: page_queue[0], reverse = True)
-        print("page queue", page_queue)
+        page_queue.sort(key=lambda page_queue: page_queue[1], reverse = True)
+        print("sorted page queue", page_queue)
         
-        removed_page = page_queue.pop(0) #remove the oldest val from the page queue
+        removed_page = page_queue.pop(0) #remove the oldest val from the page queue\
+        print("removed this page !!", removed_page)
         removed_page_num = removed_page[0]
         #remove this page num from page table
         PAGE_TABLE[removed_page_num]['present'] = False
@@ -269,7 +284,7 @@ def run_opt(page_data, physical_memory, curr_page_num, curr_offset, frame_num, f
         PAGE_TABLE[curr_page_num]['present'] = True
         PAGE_TABLE[curr_page_num]['frame'] = frame_num
         #add current page number to the end of the page queue (it is most recently used)
-        time_until= calc_time_until(addrs, curr_page_num)
+        time_until= calc_time_until(page_times)
         page_queue.append([curr_page_num, time_until])
 
         #update TLB table to map page_num to the updated frame num
@@ -283,7 +298,7 @@ def run_opt(page_data, physical_memory, curr_page_num, curr_offset, frame_num, f
         PAGE_TABLE[curr_page_num]['frame'] = frame_num
         #append page_num to the end of the queue
         #calculate time until
-        time_until = calc_time_until(addrs, curr_page_num)
+        time_until = calc_time_until(page_times)
         page_queue.append([curr_page_num, time_until])
         frame_count += 1
 
@@ -295,34 +310,32 @@ def run_opt(page_data, physical_memory, curr_page_num, curr_offset, frame_num, f
     return curr_frame_num, ref_byte, frame_count, frame_num, tlb_count, page_queue
 
 #returns time until is seen again
-def calc_time_until(addrs, curr_page_num):
-    times_found = 0
-    time = 0
-    time_arrive = 0
-    for addr in addrs:
-        #addr[2] = page_num
-        #find next occurrence of curr_page_num
-        if(addr[2] == curr_page_num):
-            if(times_found == 0):
-                #keep track of the time that the page first appeared
-                time_arrive = time
-            times_found += 1
-        if(times_found == 2):
-            #once the next occurrence is found, return the time it took to occur
-            return time - time_arrive
-        time += 1
+def calc_time_until(page_times):
+    print("calculating time")
+    print(page_times)
+    #address list contains [page_num, time]
+    #remove oldest time
+    rem_page = page_times.pop(0)
+    rem_page_num = rem_page[0]
+    time1 = rem_page[1]
+
+    for val in page_times:
+        if(val[0] == rem_page_num):
+            #found next occurrence of page_num
+            return val[1] - time1
+
     #page num never appears again
-    return None
+    return float('inf')
 
 #function to decrement all the existing time until vals
-def decrement_wait_until(page_queue, addrs):
+def decrement_wait_until(page_queue, pages):
     for item in page_queue:
         if(page_queue):
             if(item and item[1]):
                 item[1] -= 1
                 if(item[1] <= 0):
                 #recalculate time until
-                    time_until = calc_time_until(addrs, item[1])
+                    time_until = calc_time_until(pages)
                     item[1] = time_until
     return page_queue
 
