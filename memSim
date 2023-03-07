@@ -75,16 +75,16 @@ def memSim(rsf_name, frames, pra):
         curr_offset = addr[1]
         found_flag = False #flag to check if the page has been found or nah
 
-        print("current time %d" % curr_time)
+        # print("current time %d" % curr_time)
         while(state != END):
             if state == START:
                 #do something & move to next state
-                print("in start %d" % curr_addr)
+                # print("in start %d" % curr_addr)
                 state = TLB
             #first check the tlb for the page
             elif state == TLB:
                 #check if the page is in the tlb, if it is, yay, if not, check page table for page
-                print("in tlb %d" % curr_addr)
+                # print("in tlb %d" % curr_addr)
                 found_flag, curr_frame_num = check_tlb(curr_page_num)
                 if(found_flag):
                     #(MATTERS FOR LRU ONLY) found the page, but update the page queue to reflect that page was most recently used
@@ -106,7 +106,7 @@ def memSim(rsf_name, frames, pra):
             #next check the page table for the page
             elif state == PTABLE:
                 #check if the page is in the page table, if it is, yay, if not, retrieve page from backing store
-                print("in ptable %d" % curr_addr)
+                # print("in ptable %d" % curr_addr)
                 found_flag, curr_frame_num = check_ptable(curr_page_num)
                 if(found_flag):
                     #page is located in p_table yay
@@ -153,10 +153,10 @@ def memSim(rsf_name, frames, pra):
         #print metrics for each logical address
         print_addr(curr_addr, ref_byte_int, curr_frame_num, page_data.hex().upper())
 
-        print("TLB", TLBUFF)
-        print("page_fault %d" % page_fault_count)
-        print("page queue", page_queue)
-        input()
+        # print("TLB", TLBUFF)
+        # print("page_fault %d" % page_fault_count)
+        # print("page queue", page_queue)
+        # input()
 
     #completed program, print metrics
     print_metrics(total_addrs, tlb_hit_count, tlb_miss_count, page_fault_count)
@@ -271,10 +271,8 @@ def run_opt(page_data, physical_memory, curr_page_num, curr_offset, frame_num, f
         #calculate which value takes the most time until
         #sort pages in ascending order of time until before removing
         page_queue.sort(key=lambda page_queue: page_queue[1], reverse = True)
-        print("sorted page queue", page_queue)
         
         removed_page = page_queue.pop(0) #remove the oldest val from the page queue\
-        print("removed this page !!", removed_page)
         removed_page_num = removed_page[0]
         #remove this page num from page table
         PAGE_TABLE[removed_page_num]['present'] = False
@@ -311,8 +309,8 @@ def run_opt(page_data, physical_memory, curr_page_num, curr_offset, frame_num, f
 
 #returns time until is seen again
 def calc_time_until(page_times):
-    print("calculating time")
-    print(page_times)
+    # print("calculating time")
+    # print(page_times)
     #address list contains [page_num, time]
     #remove oldest time
     rem_page = page_times.pop(0)
