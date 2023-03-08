@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+
+#CSC 453 project 3 - memory simulator
+
 import sys
 
 PAGE_SIZE = 256
