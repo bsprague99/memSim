@@ -2,6 +2,26 @@ CSC 453 - Program 3
 Emily Lau & Brenden Sprague
 elau14 & baspragu
 
-steps to run:
-    1. chmod u+x memSim
-    2. ./memSim
+I was able to run the executable version of memSim on the server directly and didn't run into the problems same with Program 2, however, if the file included in the submission does not work and does not maintain permissions, please follow the below steps to 
+
+Steps to get it to run:
+    1. run ./memSim, if it is unrunnable and you receive the No such file or directory error
+    2. create a new file on the server using vim memSim and copy over the exact code from the original memSim file
+    3. run chmod u+x memSim
+    4. retry ./schedSim <job-file.txt> -p <algorithm> -q <quantum>
+
+Tested with all given test cases:
+    FIFO, LRU:
+        passes: t1, t2, t3, t4, t5, t6
+        fails: t7 - page faults match, tlb hits/misses very close (within 100), tlb hit rate matches
+    OPT:
+        passes: t1, t2, t3, t4, t5, t6
+        fails: t7 - page faults match, tlb hits/misses & hit rate significantly different
+        I am unsure why this is the case for the OPT algorithm because it matches what I expect on all the given smaller test cases and for the ones I created on my own. Also the way that the TLB is updated (evicting the old page_num from the tlb queue and adding the new page_num with the updated frame_num)
+
+    Notes:
+    - the FIFO, LRU take a very long time to run test 6 & 7 (enough time to walk away, get something from the fridge, and come back) but it does eventually run to completion and print "correct" results
+        - OPT behaves in the same manner for test 7
+    - all the implementations pass locally and come up with results that seem reasonable when run with test cases we created and with the smaller test cases
+    - tlb differences may be due to the LRU implementation of the tlb compared to a true FIFO implementation
+    - when implementing the LRU implementation, we used a stack based implementation instead of the clock/counter based implementation, this may account for some small differences
